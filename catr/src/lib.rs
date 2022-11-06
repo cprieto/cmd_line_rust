@@ -58,9 +58,8 @@ pub fn run(config: Opts) -> CatrResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use assert_cmd::Command;
+    use std::fs;
 
     type TestResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -116,10 +115,10 @@ mod tests {
     #[test]
     fn b_and_n_cannot_be_used_together() -> TestResult<()> {
         Command::cargo_bin("catr")?
-        .args(&["-b", "-n"])
-        .assert()
-        .failure();
+            .args(&["-b", "-n"])
+            .assert()
+            .failure();
 
-    Ok(())
+        Ok(())
     }
 }
