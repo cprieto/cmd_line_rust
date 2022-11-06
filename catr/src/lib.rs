@@ -1,10 +1,11 @@
+use clap::Parser;
 use std::{
     fs::File,
     io::{self, BufRead, BufReader},
 };
-use clap::Parser;
 
 #[derive(Parser, Debug)]
+#[command(author = "Cristian Prieto <me@cprieto.com>", about = "Rust cat clone")]
 pub struct Opts {
     #[arg(short = 'n', long = "number", help = "Number lines")]
     number_lines: bool,
@@ -53,4 +54,72 @@ pub fn run(config: Opts) -> CatrResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use assert_cmd::Command;
+
+    type TestResult<T> = Result<T, Box<dyn std::error::Error>>;
+
+    #[test]
+    fn it_can_output_two_files() -> TestResult<()> {
+        let mut expected = fs::read_to_string("Cargo.lock")?;
+        expected.push_str(&fs::read_to_string("Cargo.toml")?);
+
+        Command::cargo_bin("catr")?
+            .args(&["Cargo.lock", "Cargo.toml"])
+            .assert()
+            .success()
+            .stdout(expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_can_output_stdin() -> TestResult<()> {
+        Command::cargo_bin("catr")?
+            .write_stdin("hello")
+            .assert()
+            .success()
+            .stdout("hello\n");
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_can_output_num_lines() -> TestResult<()> {
+        Command::cargo_bin("catr")?
+            .arg("-n")
+            .write_stdin("hello\nworld")
+            .assert()
+            .success()
+            .stdout("     1\thello\n     2\tworld\n");
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_can_omit_num_empty_lines() -> TestResult<()> {
+        Command::cargo_bin("catr")?
+            .arg("-b")
+            .write_stdin("hello\n\nworld")
+            .assert()
+            .success()
+            .stdout("     1\thello\n\n     3\tworld\n");
+
+        Ok(())
+    }
+
+    #[test]
+    fn b_and_n_cannot_be_used_together() -> TestResult<()> {
+        Command::cargo_bin("catr")?
+        .args(&["-b", "-n"])
+        .assert()
+        .failure();
+
+    Ok(())
+    }
 }
