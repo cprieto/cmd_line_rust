@@ -57,7 +57,7 @@ pub fn run(cfg: Config) -> MyResult<()> {
             Err(err) => eprintln!("{}: {}", filename, err),
             Ok(file) => {
                 if let Ok(info) = count(file) {
-                    println!("{:?}", info);
+                    println!("{:>8}{:>8}{:>8} {filename}", info.num_lines, info.num_words, info.num_bytes);
                 }
             }
         }
