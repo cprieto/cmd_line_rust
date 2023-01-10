@@ -1,8 +1,8 @@
-use cutr::{run, Config};
+use clap::Parser;
+use cutr::{run, Opts};
 
-fn main() {
-    if let Err(e) = cutr::get_args().and_then(cutr::run) {
-        eprint!("{}", e);
-        std::process::exit(1);
-    }
+fn main() -> Result<(), Box<dyn std::error::Error>>{
+    let opts = Opts::parse();
+    run(opts)?;
+    Ok(())
 }

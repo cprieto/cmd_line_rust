@@ -1,10 +1,26 @@
 use regex::Regex;
+use clap::Parser;
 use std::num::NonZeroUsize;
 use std::{error::Error, ops::Range};
 
 use clap::{arg, Arg, ArgAction, command};
 
 type PositionList = Vec<Range<usize>>;
+
+#[derive(Debug, Parser)]
+pub struct Opts {
+    #[arg(short = 'b', long = "bytes", help = "Selected bytes", value_name = "BYTES", conflicts_with_all = ["chars"])]
+    bytes: bool,
+
+    #[arg(short = 'c', long = "chars", help = "Selected chars", value_name = "CHARS", conflicts_with_all = ["bytes"])]
+    chars: bool,
+
+    #[arg(short = 'd', long = "delim", help = "Field delimiter", default_value_t = b'\t')]
+    delimiter: u8,
+
+//    #[arg(value_parser = parse_pos)]
+//    fields: PositionList,
+}
 
 #[derive(Debug)]
 pub enum Extract {
@@ -20,31 +36,12 @@ pub struct Config {
 
 type CutrResult<T> = Result<T, Box<dyn Error>>;
 
-pub fn get_args() -> CutrResult<Config> {
-    let matches = command!()
-        .author("Cristian Prieto <me@cprieto.com>")
-        .version("1.0")
-        .about("Rust cut")
-        .arg(arg!(-b --bytes <BYTES> "Selected bytes"))
-        .arg(arg!(-c --chars <CHARS> "Selected characters"))
-        .arg(arg!(-d --delim <DELIMITER> "Field delimiter"))
-        .arg(arg!(-f --fields <FIELDS> "Selected fields"))
-        .arg(Arg::new("files").action(ArgAction::Append).default_value("-"))
-        .get_matches();
-
-    let files: Vec<String> = matches.get_many("files").unwrap_or_default().collect();
-
-    Ok(Config {
-        files
-    })
-}
-
-pub fn run(cfg: Config) -> CutrResult<()> {
-    println!("{:?}", &cfg);
+pub fn run(opts: Opts) -> CutrResult<()> {
+    println!("{:?}", &opts);
     Ok(())
 }
 
-fn parse_pos(range: &str) -> CutrResult<PositionList> {
+fn parse_pos(range: &str) -> Result<PositionList, Box<dyn Error + 'static + Send + Sync>> {
     let range_re = Regex::new(r"^(\d+)-(\d+)$").unwrap();
     range
         .split(",")
