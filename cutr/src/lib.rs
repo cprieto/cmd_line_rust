@@ -1,25 +1,48 @@
+use clap::{ArgGroup, Parser};
+use csv::{ReaderBuilder, StringRecord, WriterBuilder};
 use regex::Regex;
-use clap::Parser;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 use std::num::NonZeroUsize;
 use std::{error::Error, ops::Range};
-
-use clap::{arg, Arg, ArgAction, command};
 
 type PositionList = Vec<Range<usize>>;
 
 #[derive(Debug, Parser)]
+#[command(group(ArgGroup::new("pos").required(true).args(["fields", "chars", "bytes"])))]
 pub struct Opts {
-    #[arg(short = 'b', long = "bytes", help = "Selected bytes", value_name = "BYTES", conflicts_with_all = ["chars"])]
-    bytes: bool,
+    #[arg(short, long, help = "Selected fields", value_name = "FIELDS", value_parser = parse_pos)]
+    fields: Option<PositionList>,
 
-    #[arg(short = 'c', long = "chars", help = "Selected chars", value_name = "CHARS", conflicts_with_all = ["bytes"])]
-    chars: bool,
+    #[arg(short, long, help = "Selected bytes", value_name = "BYTES", conflicts_with_all = ["fields", "chars"], value_parser = parse_pos)]
+    bytes: Option<PositionList>,
 
-    #[arg(short = 'd', long = "delim", help = "Field delimiter", default_value_t = b'\t')]
+    #[arg(short, long, help = "Selected chars", value_name = "CHARS", conflicts_with_all = ["fields", "bytes"], value_parser = parse_pos)]
+    chars: Option<PositionList>,
+
+    #[arg(short, long, help = "Field delimiter",value_parser = parse_delim, default_value = "\t")]
     delimiter: u8,
 
-//    #[arg(value_parser = parse_pos)]
-//    fields: PositionList,
+    #[arg(help = "Input file(s)", default_value = "-", value_name = "FILE")]
+    files: Vec<String>,
+}
+
+impl Opts {
+    pub fn to_config(self) -> Config {
+        let extract = match (self.fields, self.bytes, self.chars) {
+            (Some(pos), None, None) => Extract::Fields(pos),
+            (None, Some(pos), None) => Extract::Bytes(pos),
+            (None, None, Some(pos)) => Extract::Chars(pos),
+            (None, None, None) => unreachable!("At least one of the args is required"),
+            (_, _, _) => unreachable!("the arguments conflict"),
+        };
+
+        Config {
+            delimiter: self.delimiter,
+            extract,
+            files: self.files,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -31,14 +54,100 @@ pub enum Extract {
 
 #[derive(Debug)]
 pub struct Config {
+    delimiter: u8,
+    extract: Extract,
     files: Vec<String>,
 }
 
 type CutrResult<T> = Result<T, Box<dyn Error>>;
 
-pub fn run(opts: Opts) -> CutrResult<()> {
-    println!("{:?}", &opts);
+pub fn run(cfg: Config) -> CutrResult<()> {
+    for filename in &cfg.files {
+        match open(filename) {
+            Err(err) => eprintln!("{}: {}", filename, err),
+            Ok(reader) => match &cfg.extract {
+                Extract::Chars(pos) => reader
+                    .lines()
+                    .filter_map(|line| line.ok())
+                    .for_each(|line| println!("{}", extract_chars(&line, pos))),
+
+                Extract::Bytes(pos) => reader
+                    .lines()
+                    .filter_map(|line| line.ok())
+                    .for_each(|line| println!("{}", extract_bytes(&line, pos))),
+                    
+                Extract::Fields(pos) => {
+                    let mut reader = ReaderBuilder::new()
+                        .delimiter(cfg.delimiter)
+                        .has_headers(false)
+                        .from_reader(reader);
+
+                    let mut writer = WriterBuilder::new()
+                        .delimiter(cfg.delimiter)
+                        .from_writer(io::stdout());
+
+                    for record in reader.records() {
+                        let record = record?;
+                        writer.write_record(extract_fields(&record, pos))?;
+                    }
+                }
+            },
+        }
+    }
     Ok(())
+}
+
+fn extract_chars(line: &str, char_pos: &[Range<usize>]) -> String {
+    let chars: Vec<_> = line.chars().collect();
+    let mut output: Vec<char> = vec![];
+
+    for range in char_pos.into_iter().cloned() {
+        for i in range {
+            if let Some(val) = chars.get(i) {
+                output.push(*val);
+            }
+        }
+    }
+
+    output.iter().collect()
+}
+
+fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
+    let bytes = line.as_bytes();
+    let output: Vec<_> = byte_pos
+        .iter()
+        .cloned()
+        .flat_map(|range| range.filter_map(|i| bytes.get(i).copied()))
+        .collect();
+
+    String::from_utf8_lossy(&output).to_string()
+}
+
+fn extract_fields<'rec>(record: &'rec StringRecord, field_pos: &[Range<usize>]) -> Vec<&'rec str> {
+    field_pos
+        .iter()
+        .cloned()
+        .flat_map(|range| range.filter_map(|i| record.get(i)))
+        .collect()
+}
+
+fn open(filename: &str) -> CutrResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
+fn parse_delim(delim: &str) -> Result<u8, Box<dyn Error + Send + Sync + 'static>> {
+    let bytes = delim.as_bytes();
+    if bytes.len() != 1 {
+        return Err(From::from(format!(
+            "--delim \"{}\" must be a single byte",
+            delim
+        )));
+    }
+
+    Ok(bytes[0])
 }
 
 fn parse_pos(range: &str) -> Result<PositionList, Box<dyn Error + 'static + Send + Sync>> {
